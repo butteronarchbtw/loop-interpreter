@@ -392,7 +392,7 @@ impl Parser {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum EvalError {
-    VariableNotDefined(u32)
+    VariableNotDefined(u32),
 }
 
 impl fmt::Display for EvalError {
@@ -405,12 +405,15 @@ impl fmt::Display for EvalError {
 
 struct Interpreter {
     ast: Box<Program>,
-    variables: HashMap<u32, u32>
+    variables: HashMap<u32, u32>,
 }
 
 impl Interpreter {
     pub fn new(ast: Box<Program>) -> Interpreter {
-        Interpreter { ast, variables: HashMap::new() }
+        Interpreter {
+            ast,
+            variables: HashMap::new(),
+        }
     }
 
     pub fn evaluate(&mut self) -> Result<(), EvalError> {
@@ -421,7 +424,7 @@ impl Interpreter {
         match program {
             Program::Sequential(s) => self.eval_seq(s),
             Program::NonSequential(n) => self.eval_nonseq(n),
-        } 
+        }
     }
 
     pub fn eval_seq(&mut self, seq: Sequential) -> Result<(), EvalError> {
@@ -442,31 +445,39 @@ impl Interpreter {
             Assignment::ValueAssignment(va) => {
                 let _ = self.variables.insert(va.x.i, va.c.value as u32);
                 Ok(())
-            },
+            }
             Assignment::OperatorAssigment(oa) => {
-                let xj_val = self.variables.get(&oa.xj.i).ok_or(EvalError::VariableNotDefined(oa.xj.i))?.to_owned();
+                let xj_val = self
+                    .variables
+                    .get(&oa.xj.i)
+                    .ok_or(EvalError::VariableNotDefined(oa.xj.i))?
+                    .to_owned();
                 let xi_new: u32;
                 match *oa.op {
                     Operator::Plus => {
-                        xi_new = xj_val + oa.c.value as u32; 
-                    },
+                        xi_new = xj_val + oa.c.value as u32;
+                    }
                     Operator::Minus => {
                         if oa.c.value as u32 >= xj_val {
                             xi_new = 0;
                         } else {
                             xi_new = xj_val - oa.c.value as u32;
                         }
-                    },
+                    }
                 };
 
                 let _ = self.variables.insert(oa.xi.i, xi_new);
                 Ok(())
-            },
+            }
         }
     }
 
     pub fn eval_loop_statement(&mut self, l: LoopStatement) -> Result<(), EvalError> {
-        let mut count = self.variables.get(&l.count.i).ok_or(EvalError::VariableNotDefined(l.count.i))?.to_owned();
+        let mut count = self
+            .variables
+            .get(&l.count.i)
+            .ok_or(EvalError::VariableNotDefined(l.count.i))?
+            .to_owned();
         while count > 0 {
             self.eval_program(*l.body.clone())?;
             count -= 1;
