@@ -1,4 +1,5 @@
 use core::fmt;
+use std::collections::HashMap;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 enum Token {
@@ -149,44 +150,53 @@ impl Lexer {
     }
 }
 
+#[derive(Clone)]
 enum Program {
     Sequential(Sequential),
     NonSequential(NonSequential),
 }
 
+#[derive(Clone)]
 struct Sequential {
     p1: Box<NonSequential>,
     p2: Box<Program>,
 }
 
+#[derive(Clone)]
 enum NonSequential {
     Assignment(Assignment),
     LoopStatement(LoopStatement),
 }
 
+#[derive(Clone)]
 enum Assignment {
     ValueAssignment(ValueAssignment),      // x_i := c
     OperatorAssigment(OperatorAssignment), // x_i := x_j (+|-) c
 }
 
+#[derive(Clone)]
 struct Variable {
     i: u32,
 }
 
+#[derive(Clone)]
 struct Constant {
     value: u8,
 }
 
+#[derive(Clone)]
 struct ValueAssignment {
     x: Box<Variable>,
     c: Box<Constant>,
 }
 
+#[derive(Clone)]
 enum Operator {
     Plus,
     Minus,
 }
 
+#[derive(Clone)]
 struct OperatorAssignment {
     xi: Box<Variable>,
     xj: Box<Variable>,
@@ -194,6 +204,7 @@ struct OperatorAssignment {
     c: Box<Constant>,
 }
 
+#[derive(Clone)]
 struct LoopStatement {
     count: Box<Variable>,
     body: Box<Program>,
@@ -379,6 +390,91 @@ impl Parser {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum EvalError {
+    VariableNotDefined(u32)
+}
+
+impl fmt::Display for EvalError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            EvalError::VariableNotDefined(i) => write!(f, "variable x{} not defined", i),
+        }
+    }
+}
+
+struct Interpreter {
+    ast: Box<Program>,
+    variables: HashMap<u32, u32>
+}
+
+impl Interpreter {
+    pub fn new(ast: Box<Program>) -> Interpreter {
+        Interpreter { ast, variables: HashMap::new() }
+    }
+
+    pub fn evaluate(&mut self) -> Result<(), EvalError> {
+        self.eval_program(*self.ast.clone())
+    }
+
+    pub fn eval_program(&mut self, program: Program) -> Result<(), EvalError> {
+        match program {
+            Program::Sequential(s) => self.eval_seq(s),
+            Program::NonSequential(n) => self.eval_nonseq(n),
+        } 
+    }
+
+    pub fn eval_seq(&mut self, seq: Sequential) -> Result<(), EvalError> {
+        self.eval_nonseq(*seq.p1);
+        self.eval_program(*seq.p2);
+        Ok(())
+    }
+
+    pub fn eval_nonseq(&mut self, nonseq: NonSequential) -> Result<(), EvalError> {
+        match nonseq {
+            NonSequential::Assignment(a) => self.eval_assignment(a),
+            NonSequential::LoopStatement(l) => self.eval_loop_statement(l),
+        }
+    }
+
+    pub fn eval_assignment(&mut self, a: Assignment) -> Result<(), EvalError> {
+        match a {
+            Assignment::ValueAssignment(va) => {
+                let _ = self.variables.insert(va.x.i, va.c.value as u32);
+                Ok(())
+            },
+            Assignment::OperatorAssigment(oa) => {
+                let xj_val = self.variables.get(&oa.xj.i).ok_or(EvalError::VariableNotDefined(oa.xj.i))?.to_owned();
+                let xi_new: u32;
+                match *oa.op {
+                    Operator::Plus => {
+                        xi_new = xj_val + oa.c.value as u32; 
+                    },
+                    Operator::Minus => {
+                        if oa.c.value as u32 >= xj_val {
+                            xi_new = 0;
+                        } else {
+                            xi_new = xj_val - oa.c.value as u32;
+                        }
+                    },
+                };
+
+                let _ = self.variables.insert(oa.xi.i, xi_new);
+                Ok(())
+            },
+        }
+    }
+
+    pub fn eval_loop_statement(&mut self, l: LoopStatement) -> Result<(), EvalError> {
+        let mut count = self.variables.get(&l.count.i).ok_or(EvalError::VariableNotDefined(l.count.i))?.to_owned();
+        while count > 0 {
+            self.eval_program(*l.body.clone())?;
+            count -= 1;
+        }
+        Ok(())
+    }
+}
+
 fn main() {}
 
 #[cfg(test)]
@@ -446,5 +542,18 @@ mod test {
                 _ => false,
             }
         }));
+    }
+
+    #[test]
+    fn test_evaluate() {
+        let prog = "x1:=1;x1:=x1+1;x2:=0;loop x1 do x2 := x2 + 1 end";
+        let mut l = Lexer::new(prog.to_string());
+        let tokens = l.lex().unwrap();
+        let mut p = Parser::new(tokens);
+        let ast = p.parse().unwrap();
+        let mut i = Interpreter::new(ast);
+        i.evaluate().unwrap();
+        assert_eq!(i.variables.get(&1).unwrap(), &2);
+        assert_eq!(i.variables.get(&1).unwrap(), i.variables.get(&2).unwrap());
     }
 }
