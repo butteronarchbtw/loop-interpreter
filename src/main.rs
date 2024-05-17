@@ -1,6 +1,6 @@
 use core::fmt;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 enum Token {
     Assignment, // :=
     Plus,
@@ -62,7 +62,7 @@ impl Lexer {
 
     pub fn read_keyword(&mut self) -> String {
        let start = self.pos; 
-       while self.pos < self.text.len() && self.text[self.pos].is_ascii_alphabetic() {
+       while self.pos < self.text.len() && self.text[self.pos].is_ascii_alphanumeric() {
             self.pos += 1;
        }
        let n = String::from_utf8_lossy(&self.text[start..self.pos]).to_string();
@@ -119,7 +119,6 @@ impl Lexer {
                 }
             },
             b'a'..=b'z' => {
-                println!("reading keyword starting at {}", self.text[self.pos] as char);
                 let kw = self.read_keyword();
                 match kw.as_str() {
                     "loop" => Ok(Token::LoopKeyword),
@@ -147,6 +146,130 @@ impl Lexer {
     }
 }
 
+enum Program {
+    Sequential(Sequential),
+    Assignment(Assignment),
+    LoopStatement(LoopStatement)
+}
+
+struct Sequential {
+    p1: Box<Program>,
+    p2: Box<Program>
+}
+
+enum Assignment {
+   ValueAssignment(ValueAssignment), // x_i := c
+   OperatorAssigment(OperatorAssignment) // x_i := x_j (+|-) c
+}
+
+struct Variable {
+    i: u32
+}
+
+struct Constant {
+    value: u8
+}
+
+struct ValueAssignment {
+    x: Box<Variable>,
+    c: Box<Constant>
+}
+
+enum Operator {
+    Plus,
+    Minus
+}
+
+struct OperatorAssignment {
+    x: Box<Variable>,
+    op: Box<Operator>,
+    c: Box<Constant>
+}
+
+struct LoopStatement {
+    count: Box<Variable>,
+    body: Box<Program>
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ParseError {
+    NoTokensLeft,
+    ExpectedDifferentToken(Token, Token)
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ParseError::NoTokensLeft => write!(f, "too few tokens provided"),
+            Self::ExpectedDifferentToken(t1, t2) => write!(f, "got token {:?}, expected token {:?}", t1, t2),
+        }
+    }
+}
+
+struct Parser {
+    tokens: <Vec<Token> as IntoIterator>::IntoIter
+}
+
+impl Parser {
+    pub fn new(tokens: Vec<Token>) -> Parser {
+        Parser {
+            tokens: tokens.into_iter()
+        }
+    }
+
+    /// main program
+    pub fn parse(&mut self) -> Box<Program> {
+    }
+
+    /// <program> ::= <assignment> | <sequential> | <loop-statement>
+    /// <assignment> ::= <variable>:=<constant> | <variable>:=<variable>+<constant> |
+    ///     <variable>:=<varibale>-<constant>
+    /// <sequential> ::= <program>;<program>
+    /// <loop-statement> ::= loop<variable>do<program>end
+    pub fn parse_program(&mut self) -> Box<Program> {
+        
+    }
+
+    pub fn parse_assignment(&mut self) -> Result<Box<Assignment>, ParseError> {
+        let next = self.tokens.next().ok_or(ParseError::NoTokensLeft)?;
+        match next {
+            Token::Variable(v) =>  {
+                let next = self.tokens.next().ok_or(ParseError::NoTokensLeft)?;
+                if next != Token::Assignment {
+                    Err(ParseError::ExpectedDifferentToken(Token::Assignment, next))
+                } else {
+                    let next = self.tokens.next().ok_or(ParseError::NoTokensLeft)?;
+                    match next {
+                       Token::Variable(vj) => {
+                            let next = self.tokens.next().ok_or(ParseError::NoTokensLeft)?;
+                             
+                       },
+                       Token::Constant(c) => {
+                            Ok(Box::new(Assignment::ValueAssignment))
+                       },
+                       _ => Err(ParseError::ExpectedDifferentToken(Token::Constant, next)), //TODO:
+                                                                                            //variable
+                                                                                            //error:
+                                                                                            //token
+                                                                                            //this
+                                                                                            //or
+                                                                                            //that
+                    }
+                }
+            },
+            _ => Err(ParseError::ExpectedDifferentToken(Token::Variable(69), next)),
+        }
+    }
+
+    pub fn parse_sequential(&mut self) -> Box<Sequential> {
+
+    }
+
+    pub fn parse_loop_statement(&mut self) -> Box<LoopStatement> {
+
+    }
+}
+
 fn main() {
 }
 
@@ -159,7 +282,7 @@ mod test {
         let mut l = Lexer::new("hallo123".to_string());    
         let lex_res = l.lex();
         assert!(lex_res.is_err_and(|e| {
-            assert_eq!(e, LexError::IllegalKeyword(String::from("hallo")));
+            assert_eq!(e, LexError::IllegalKeyword(String::from("hallo123")));
             return true;
         }));
     }
