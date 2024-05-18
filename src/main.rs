@@ -409,6 +409,8 @@ struct Interpreter {
 }
 
 impl Interpreter {
+    // TODO: there should not be an error if variable is not defined, it should be set to 0
+    // there should be $k$ variables which are defined by the user (via command line?)
     pub fn new(ast: Box<Program>) -> Interpreter {
         Interpreter {
             ast,
@@ -428,8 +430,8 @@ impl Interpreter {
     }
 
     pub fn eval_seq(&mut self, seq: Sequential) -> Result<(), EvalError> {
-        self.eval_nonseq(*seq.p1);
-        self.eval_program(*seq.p2);
+        self.eval_nonseq(*seq.p1)?;
+        self.eval_program(*seq.p2)?;
         Ok(())
     }
 
