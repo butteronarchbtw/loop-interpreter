@@ -1,5 +1,5 @@
 use core::fmt;
-use std::collections::HashMap;
+use std::{collections::HashMap, env, fs, os, path::Path, process::exit};
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 enum Token {
@@ -46,7 +46,7 @@ impl Lexer {
     }
 
     pub fn skip_whitespace(&mut self) {
-        while self.text[self.pos].is_ascii_whitespace() && self.pos < self.text.len() {
+        while self.pos < self.text.len() && self.text[self.pos].is_ascii_whitespace()  {
             self.pos += 1;
         }
     }
@@ -240,7 +240,11 @@ impl Parser {
 
     /// main program
     pub fn parse(&mut self) -> Result<Box<Program>, ParseError> {
-        self.parse_program()
+        let prog = self.parse_program()?;
+        if self.tokens.len() > 1 {
+            return Err(ParseError::ExpectedDifferentToken(Token::Semicolon, Token::EOF));
+        }
+        Ok(prog)
     }
 
     /// <program> ::= <non-sequential> | <non-sequential>;<program>
@@ -418,14 +422,34 @@ impl Interpreter {
         }
     }
 
+    fn set_start_allocation(&mut self, values: Vec<u32>) {
+        for (i, v) in values.iter().enumerate() {
+            self.variables.insert(i as u32 + 1, v.to_owned());
+        }
+    }
+
+    fn get_variable_value(&mut self, v: Variable) -> u32 {
+        let var = self
+            .variables
+            .get(&v.i);
+
+        match var {
+            Some(v) => v.to_owned(),
+            None => {
+                self.variables.insert(v.i, 0);
+                0
+            }
+        }
+
+    }
+
     pub fn evaluate(&mut self) -> Result<(), EvalError> {
         self.eval_program(*self.ast.clone())
     }
 
     pub fn eval_program(&mut self, program: Program) -> Result<(), EvalError> {
         match program {
-            Program::Sequential(s) => self.eval_seq(s),
-            Program::NonSequential(n) => self.eval_nonseq(n),
+            Program::Sequential(s) => self.eval_seq(s), Program::NonSequential(n) => self.eval_nonseq(n),
         }
     }
 
@@ -449,11 +473,7 @@ impl Interpreter {
                 Ok(())
             }
             Assignment::OperatorAssigment(oa) => {
-                let xj_val = self
-                    .variables
-                    .get(&oa.xj.i)
-                    .ok_or(EvalError::VariableNotDefined(oa.xj.i))?
-                    .to_owned();
+                let xj_val = self.get_variable_value(*oa.xj);
                 let xi_new: u32;
                 match *oa.op {
                     Operator::Plus => {
@@ -475,11 +495,7 @@ impl Interpreter {
     }
 
     pub fn eval_loop_statement(&mut self, l: LoopStatement) -> Result<(), EvalError> {
-        let mut count = self
-            .variables
-            .get(&l.count.i)
-            .ok_or(EvalError::VariableNotDefined(l.count.i))?
-            .to_owned();
+        let mut count = self.get_variable_value(*l.count);
         while count > 0 {
             self.eval_program(*l.body.clone())?;
             count -= 1;
@@ -488,7 +504,83 @@ impl Interpreter {
     }
 }
 
-fn main() {}
+fn main() {
+   let args: Vec<String> = env::args().collect(); 
+   let mut values: Vec<u32> = vec![];
+   if args.len() < 2 {
+        println!("need at least 1 argument to the call");
+        exit(1);
+   }
+
+   match args[1].as_str() {
+        "-h" | "--help" => {
+            println!("Usage:");
+            println!("-h / --help: show this help");
+            println!("-k: set the first k variable assignments (list with spaces)");
+            exit(0);
+        },
+        "-k" => {
+            if args.len() < 3 {
+                println!("wtf u tryna do here? >:(");
+                exit(1);
+            }
+            values = args.clone()[2..args.len() - 1].iter().map(|v| {
+                match v.parse::<u32>() {
+                    Ok(v) => v,
+                    Err(e) => {
+                        println!("{}", e.to_string());
+                        exit(1);
+                    }
+                }
+            }).collect();
+        },
+        _ => {
+        }
+   }
+
+   let filename = args.last().clone().expect("congrats, you have reached an error that cannot happen");
+
+   let read_res = fs::read_to_string(Path::new(filename));
+   let text = match read_res {
+     Ok(text) => text,
+     Err(e) => {
+        println!("file \"{filename}\" not found");
+        println!("{}", e.to_string());
+        exit(1);
+     }
+   };
+   let mut lexer = Lexer::new(text);
+   let tokens = match lexer.lex() {
+        Ok(tokens) => tokens,
+        Err(e) => {
+            println!("{}", e.to_string());
+            exit(1);
+        }
+   };
+   let mut parser = Parser::new(tokens);
+   let ast = match parser.parse() {
+        Ok(ast) => ast,
+        Err(e) => {
+            println!("{}", e.to_string());
+            exit(1);
+        }
+   };
+   let mut interpreter = Interpreter::new(ast);
+   interpreter.set_start_allocation(values);
+    match interpreter.evaluate() {
+        Ok(()) => {
+            println!("========");
+            println!("PROGRAM SUCCESSFUL");
+            println!("END CONFIGURATION FOLLOWS");
+            println!("========");
+            println!("{:?}", interpreter.variables);
+        },
+        Err(e) => {
+            println!("{}", e.to_string());
+            exit(1);
+        }
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -559,7 +651,7 @@ mod test {
 
     #[test]
     fn test_evaluate() {
-        let prog = "x1:=1;x1:=x1+1;x2:=0;loop x1 do x2 := x2 + 1 end";
+        let prog = "x1:=x1+1;x1:=x1+1;x2:=0;loop x1 do x2 := x2 + 1 end";
         let mut l = Lexer::new(prog.to_string());
         let tokens = l.lex().unwrap();
         let mut p = Parser::new(tokens);
